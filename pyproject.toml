@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "son-hangul"
+version = "0.1.0"
+description = "받는 사람에 맞춘 따뜻한 문장을 AI로 만들고, 사람이 쓴 것 같은 한글 손글씨 이미지·인쇄물로 그려 주는 도구"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "Pillow>=10.0",
+    "fonttools>=4.40",
+    "reportlab>=4.0",
+]
+
+[project.optional-dependencies]
+web = ["gradio>=4.0"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+handwrite = "sonhangul.cli:main"
+
+[tool.setuptools]
+packages = ["sonhangul"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
