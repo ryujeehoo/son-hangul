@@ -1,0 +1,122 @@
+# ─────────────────────────────────────────────
+# 공개 저장소다. 키, 개인정보, 대용량 파일은 절대 올리지 않는다.
+# 예외로 올려야 하는 파일은 맨 아래 "!" 규칙에 추가한다.
+# ─────────────────────────────────────────────
+
+# ── 비밀 값 / API 키 ─────────────────────────
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+credentials*.json
+service-account*.json
+
+# ── 받는 사람 명단 / 생성 문구 (개인정보) ────
+# 실제 고객·직원 이름과 특징이 들어가므로 커밋 금지.
+# 예시는 examples/ 아래 가상의 이름으로만 만든다.
+recipients*.csv
+recipients*.json
+recipients*.xlsx
+messages*.csv
+messages*.json
+data/private/
+private/
+
+# ── 생성 결과물 ──────────────────────────────
+# README용 샘플은 docs/samples/ 에만 둔다(아래 예외 규칙).
+out/
+output/
+outputs/
+results/
+renders/
+*.pdf
+!docs/**/*.pdf
+
+# ── LLM 응답 캐시 / 로그 ─────────────────────
+.cache/
+cache/
+llm_cache/
+*.sqlite
+*.sqlite3
+*.db
+logs/
+*.log
+
+# ── 데이터셋 (재배포 금지 데이터 포함) ───────
+# AI Hub 등에서 받은 데이터는 약관상 재배포 불가.
+datasets/
+data/raw/
+data/external/
+*.zip
+*.tar
+*.tar.gz
+*.7z
+
+# ── 모델 가중치 / 체크포인트 ─────────────────
+models/
+checkpoints/
+weights/
+runs/
+wandb/
+lightning_logs/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.bin
+*.h5
+*.npz
+
+# ── 스크립트로 내려받는 폰트 ─────────────────
+# 폰트는 scripts 로 받아 쓴다. 라이선스 확인 후 직접 넣는 것만 assets/fonts/ 에.
+fonts/_downloads/
+assets/fonts/_downloads/
+
+# ── Python ───────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+.venv/
+venv/
+env/
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+
+# ── Jupyter / Colab ──────────────────────────
+.ipynb_checkpoints/
+
+# ── 웹 UI 임시 파일 ──────────────────────────
+.gradio/
+flagged/
+.streamlit/secrets.toml
+
+# ── 에디터 / OS ──────────────────────────────
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── 예외: 저장소에 올리는 것 ─────────────────
+!docs/samples/
+!docs/samples/**
+
+# 예시 파일(가상의 이름만)은 올린다.
+!examples/**
