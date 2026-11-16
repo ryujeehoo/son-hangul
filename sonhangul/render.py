@@ -150,7 +150,8 @@ def layout_text(
     line_h = style.line_height * size
 
     space = chain.lookup(" ")
-    space_adv = (space.advance if space else 0.3) * size
+    # 띄어쓰기 폭도 글자 폭 버릇을 따른다(길쭉하게 쓰는 사람은 띄어쓰기도 좁다).
+    space_adv = (space.advance if space else 0.3) * size * style.habits.width
 
     def advance_of(s: str) -> float:
         total = 0.0
