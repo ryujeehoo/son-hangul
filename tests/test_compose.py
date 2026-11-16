@@ -165,3 +165,56 @@ def test_unusable_model_output_raises(tmp_path, monkeypatch):
     monkeypatch.setattr(C.urllib.request, "urlopen", lambda req, timeout=None: _reply(["Thank you!"]))
     with pytest.raises(SonError, match="쓸 만한 문구"):
         compose(Recipient("가"), _settings(tmp_path))
+
+
+def test_dead_model_falls_back_to_next(tmp_path, monkeypatch, capsys):
+    """카탈로그에서 내려간 모델(410)은 건너뛰고 다음 모델로 문구를 만든다."""
+    asked = []
+
+    def fake_urlopen(req, timeout=None):
+        model = json.loads(req.data)["model"]
+        asked.append(model)
+        if model == "old/model":
+            raise _http_error(410)
+        return _reply(["고맙습니다."])
+
+    monkeypatch.setattr(C.urllib.request, "urlopen", fake_urlopen)
+    settings = _settings(tmp_path)
+    settings.llm_model, settings.llm_fallbacks = "old/model", ("new/model",)
+    out = compose(Recipient("가"), settings)
+    assert out[0].text == "고맙습니다." and asked == ["old/model", "new/model"]
+    assert "다음 모델" in capsys.readouterr().err
+
+
+def test_all_models_dead_gives_actionable_error(tmp_path, monkeypatch):
+    def fake_urlopen(req, timeout=None):
+        raise _http_error(404)
+
+    monkeypatch.setattr(C.urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(SonError, match="handwrite models"):
+        compose(Recipient("가"), _settings(tmp_path))
+
+
+def test_reasoning_model_with_empty_answer_falls_back(tmp_path, monkeypatch):
+    """추론형 모델이 생각만 하다 끝나면 content 가 None 으로 온다."""
+    replies = iter([
+        FakeResponse({"choices": [{"message": {"content": None, "reasoning_content": "생각 중"}, "finish_reason": "length"}]}),
+        _reply(["고맙습니다."]),
+    ])
+    monkeypatch.setattr(C.urllib.request, "urlopen", lambda req, timeout=None: next(replies))
+    settings = _settings(tmp_path)
+    settings.llm_fallbacks = ("b/model",)
+    assert compose(Recipient("가"), settings)[0].text == "고맙습니다."
+
+
+def test_parse_salvages_strings_from_broken_json():
+    broken = '{"messages": ["올해 고생 많았어요.", "힘이 됐어요."], ["내년에도 잘 부탁드려요."]}'
+    assert parse_messages(broken, 45) == ["올해 고생 많았어요.", "힘이 됐어요.", "내년에도 잘 부탁드려요."]
+    fenced = '```json\n{\n  "messages": [\n    "하나예요.",\n    "둘이에요."\n  ]\n}\n```'
+    assert parse_messages(fenced, 45) == ["하나예요.", "둘이에요."]
+
+
+def test_list_models(tmp_path, monkeypatch):
+    monkeypatch.setattr(C.urllib.request, "urlopen",
+                        lambda req, timeout=None: FakeResponse({"data": [{"id": "b/two"}, {"id": "a/one"}]}))
+    assert C.list_models(_settings(tmp_path)) == ["a/one", "b/two"]

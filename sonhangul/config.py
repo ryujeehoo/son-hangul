@@ -17,8 +17,10 @@ def _data_root() -> Path:
 
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
-# build.nvidia.com 카탈로그에서 무료로 부를 수 있는 모델. 한국어 문장이 무난한 쪽.
-DEFAULT_LLM_MODEL = "meta/llama-3.3-70b-instruct"
+# build.nvidia.com 카탈로그의 모델. 2026-11-16 에 실제로 불러 보고 골랐다(docs/research.md).
+# 카탈로그 모델은 예고 없이 내려가므로(llama-3.3-70b 는 2026-08 에 종료), 못 쓰게 되면 다음 모델로 넘어간다.
+DEFAULT_LLM_MODEL = "nvidia/nemotron-3-ultra-550b-a55b"
+DEFAULT_LLM_FALLBACKS = ("google/gemma-4-31b-it",)
 
 
 def _load_dotenv(path: Path) -> None:
@@ -41,10 +43,17 @@ def load_env(explicit: Path | None = None) -> None:
             _load_dotenv(candidate)
 
 
+def _split(value: str | None, default: tuple[str, ...]) -> tuple[str, ...]:
+    if value is None:
+        return default
+    return tuple(v.strip() for v in value.split(",") if v.strip())
+
+
 @dataclass
 class Settings:
     nvidia_api_key: str | None = None
     llm_model: str = DEFAULT_LLM_MODEL
+    llm_fallbacks: tuple[str, ...] = DEFAULT_LLM_FALLBACKS
     base_url: str = NVIDIA_BASE_URL
     cache_dir: Path = field(default_factory=lambda: _data_root() / ".cache" / "compose")
 
@@ -52,7 +61,8 @@ class Settings:
     def from_env(cls) -> "Settings":
         return cls(
             nvidia_api_key=os.getenv("NVIDIA_API_KEY") or None,
-            llm_model=os.getenv("SON_LLM_MODEL", DEFAULT_LLM_MODEL),
+            llm_model=os.getenv("SON_LLM_MODEL") or DEFAULT_LLM_MODEL,
+            llm_fallbacks=_split(os.getenv("SON_LLM_FALLBACKS"), DEFAULT_LLM_FALLBACKS),
             base_url=os.getenv("SON_LLM_BASE_URL", NVIDIA_BASE_URL),
             cache_dir=Path(os.getenv("SON_CACHE_DIR") or _data_root() / ".cache" / "compose"),
         )

@@ -8,6 +8,7 @@ from __future__ import annotations
 import csv
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -100,13 +101,21 @@ def compose_all(
     offline: bool = False,
     use_cache: bool = True,
     seed: int | None = None,
+    jobs: int = 3,
 ) -> list[CardText]:
-    cards: list[CardText] = []
-    for i, r in enumerate(recipients, start=1):
-        print(f"  [{i}/{len(recipients)}] {r.name} 문구 만드는 중", file=sys.stderr)
+    """사람마다 문구를 하나씩 만든다. API 가 느려서 jobs 명씩 동시에 묻는다(순서는 명단 그대로)."""
+
+    def one(item: tuple[int, Recipient]) -> CardText:
+        i, r = item
         msg: Message = compose(r, settings, offline=offline, use_cache=use_cache, seed=seed)[0]
-        cards.append(CardText(i, r.name, greeting.format(name=r.name), msg.text, r.sender, msg.source))
-    return cards
+        print(f"  [{i}/{len(recipients)}] {r.name} 문구 완성", file=sys.stderr)
+        return CardText(i, r.name, greeting.format(name=r.name), msg.text, r.sender, msg.source)
+
+    items = list(enumerate(recipients, start=1))
+    if offline or not settings.nvidia_api_key or jobs <= 1:
+        return [one(item) for item in items]
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        return list(pool.map(one, items))
 
 
 def write_messages(cards: list[CardText], path: str | Path) -> Path:

@@ -92,3 +92,20 @@ def test_cli_batch_needs_card_size(tmp_path, capsys):
     people = _write(tmp_path / "p.csv", "name\n가\n")
     assert cli.main(["batch", str(people), "--offline", "-o", str(tmp_path / "o")]) == 1
     assert "카드 크기" in capsys.readouterr().err
+
+
+def test_compose_all_keeps_order_when_parallel(tmp_path, monkeypatch):
+    import time
+
+    from sonhangul import batch as B
+    from sonhangul.compose import Message, Recipient
+    from sonhangul.config import Settings
+
+    def slow_compose(r, settings, **kw):
+        time.sleep(0.05 if r.name == "첫째" else 0.0)  # 첫 사람이 가장 늦게 끝나도 순서는 그대로
+        return [Message(f"{r.name}에게", "llm")]
+
+    monkeypatch.setattr(B, "compose", slow_compose)
+    people = [Recipient("첫째"), Recipient("둘째"), Recipient("셋째")]
+    cards = B.compose_all(people, Settings(nvidia_api_key="nvapi-x", cache_dir=tmp_path), jobs=3)
+    assert [(c.no, c.name, c.message) for c in cards] == [(1, "첫째", "첫째에게"), (2, "둘째", "둘째에게"), (3, "셋째", "셋째에게")]

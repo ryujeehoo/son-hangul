@@ -178,7 +178,7 @@ def cmd_batch(args) -> int:
         log(f"{len(recipients)}명의 문구를 만듭니다.")
         cards = compose_all(
             recipients, settings, greeting=args.greeting, offline=args.offline,
-            use_cache=not args.no_cache, seed=args.seed,
+            use_cache=not args.no_cache, seed=args.seed, jobs=max(1, args.jobs),
         )
         messages_path = write_messages(cards, outdir / "messages.csv")
         log(f"문구를 저장했습니다: {messages_path}")
@@ -217,6 +217,18 @@ def cmd_list(args) -> int:
     print("용지:")
     for key, (w, h) in PAGE_SIZES_MM.items():
         print(f"  {key:15s} {w:g} x {h:g} mm")
+    return 0
+
+
+def cmd_models(args) -> int:
+    from .compose import list_models
+
+    settings = Settings.from_env()
+    chain = [settings.llm_model, *settings.llm_fallbacks]
+    for name in list_models(settings):
+        mark = f"  <- 지금 설정({chain.index(name) + 1}순위)" if name in chain else ""
+        print(f"{name}{mark}")
+    log("목록에 있어도 계정에 따라 못 쓰는 모델이 있습니다. 글쓰기용이 아닌 모델도 섞여 있습니다.")
     return 0
 
 
@@ -280,6 +292,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--greeting", default="{name} 님께", help="받는 사람 줄")
     p.add_argument("--from", dest="sender", help="명단에 보내는 사람이 없을 때 쓸 이름")
     p.add_argument("--no-combined", action="store_true", help="all_cards.pdf 를 만들지 않는다")
+    p.add_argument("--jobs", type=int, default=3, help="문구를 몇 명씩 동시에 만들지 (기본 3)")
     add_compose_args(p)
     _add_style_args(p)
     p.set_defaults(func=cmd_batch)
@@ -287,6 +300,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("fonts", help="쓸 수 있는 손글씨 폰트")
     p.add_argument("--download", action="store_true", help="전부 미리 내려받는다")
     p.set_defaults(func=cmd_fonts)
+
+    p = sub.add_parser("models", help="NVIDIA 카탈로그에서 지금 쓸 수 있는 모델 이름")
+    p.set_defaults(func=cmd_models)
 
     p = sub.add_parser("list", help="펜, 종이, 용지 목록")
     p.set_defaults(func=cmd_list)

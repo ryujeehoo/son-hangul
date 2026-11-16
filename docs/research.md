@@ -38,9 +38,32 @@
 
 ## 문장 생성 API (NVIDIA NIM)
 
-- 엔드포인트 `https://integrate.api.nvidia.com/v1`, 모델 `meta/llama-3.3-70b-instruct` 는 여러 자료에서 같은 이름으로 확인된다([모델 페이지](https://build.nvidia.com/meta/llama-3_3-70b-instruct)).
+2026-11-16 에 실제 키로 불러 본 결과다(**확인함**). 같은 프롬프트(직원 한 명, 두 문장, 문구 3개)를 한 번씩 보냈다.
+
+| 모델 | 걸린 시간 | 결과 |
+|---|---|---|
+| `meta/llama-3.3-70b-instruct` | - | **410: 2026-08-26 에 서비스 종료.** 예전 프로젝트의 기본값이었다 |
+| `nvidia/nemotron-3-ultra-550b-a55b` | 22~42초 | 존댓말, 특징 반영, JSON 정확. **기본값으로 채택** |
+| `google/gemma-4-31b-it` | 150~180초 | 문장이 가장 자연스러움. 느려서 2순위(대체 모델) |
+| `stepfun-ai/step-5-preview` | 169초 | 문장 좋음. 느림 |
+| `openai/gpt-oss-20b` | 181초 | 매번 이름으로 시작, 문구끼리 비슷함 |
+| `minimaxai/minimax-m3.1-flash` | 72초 | 반말로 씀 |
+| `nvidia/nemotron-3.5-bolt-e4b` | 1.5초 | 아주 빠르지만 JSON 이 깨지고 문장이 짧게 끊김 |
+| `z-ai/glm-5.3-flash`, `nvidia/nemotron-3.5-lightning-30b-a3b` | - | 생각만 하다 2,500토큰을 다 쓰고 답이 비어 옴 |
+| `mistralai/mistral-large-4-1t-a52b`, `google/gemma-3-12b-it` | - | 목록에는 있으나 이 계정에서 404 |
+| `deepseek-ai/deepseek-v4.1-flash`, `meta/muse-glimmer-30b` | - | 240초 안에 응답 없음 |
+
+시간은 무료 API 대기열에 따라 크게 달라진다(한 번 잰 값이다). 여기서 얻은 것:
+
+- 카탈로그 모델은 몇 달 만에 내려간다. 그래서 대체 모델로 자동으로 넘어가게 했고(`SON_LLM_FALLBACKS`), `handwrite models` 로 목록을 볼 수 있게 했다.
+- 추론형 모델은 답 대신 `reasoning_content` 만 채우고 끝날 수 있다. 빈 답은 "모델을 쓸 수 없음"으로 보고 다음 모델로 넘어간다.
+- 프롬프트에 "존댓말로", "이름을 문장 첫머리에 부르지 말 것"을 넣기 전에는 여러 모델이 반말로 쓰거나 이름으로 문장을 시작했다.
+- 모델이 특징에서 넘겨짚어 없던 일화를 지어낸다("손글씨를 좋아함" → "손수 적어 주신 노트가 책상에 있다"). 프롬프트에 금지 규칙을 넣은 뒤 다시 불러 봐도 세 문구 모두 그대로였다. 프롬프트로는 못 막으니 사람이 읽어 보고 고쳐야 한다.
+
+참고로 검색으로 찾은 내용:
+
+- 엔드포인트 `https://integrate.api.nvidia.com/v1` 은 지금도 같다.
 - 무료 사용 한도는 NVIDIA가 고정된 숫자로 공개하지 않는다. 분당 30~40회라는 [제3자 분석](https://news.creeta.com/ko/nvidia-nim-free-tier-limits-2026-ko/)이 있으나 **확인 못 함**. 정확한 값은 build.nvidia.com 계정 화면에서 봐야 한다.
-- 모델이 예고 없이 내려가는 일이 있다는 보고가 있어, 모델 이름은 코드가 아니라 `.env`(`SON_LLM_MODEL`)로 바꿀 수 있게 했다.
 
 ## 다음에 해 볼 순서
 
