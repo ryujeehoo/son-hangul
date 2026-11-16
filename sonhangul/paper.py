@@ -96,16 +96,24 @@ def make_paper(
     elif key == "kraft":
         base = np.array([201, 170, 126], dtype=np.float32)
         speck = rng.random((h, w), dtype=np.float32)
-        short = _fiber(rng, w, h, scale * 0.25, max(1.0, scale * 0.012))
-        shade = 1.0 - 0.06 * fine - 0.07 * cloud - 0.035 * fiber - 0.06 * short - 0.10 * (speck > 0.992)
+        short = _fiber(rng, w, h, scale * 0.22, max(1.0, scale * 0.014))
+        mottle = value_noise(rng, w, h, scale * 0.35)
+        shade = (
+            1.0 - 0.05 * fine - 0.07 * cloud - 0.045 * mottle - 0.012 * fiber - 0.035 * short
+            - 0.10 * (speck > 0.994) + 0.05 * (speck < 0.004)
+        )
         grain = 0.35 * fine + 0.65 * fiber
     elif key == "aged":
         base = np.array([233, 216, 176], dtype=np.float32)
         blotch = fractal_noise(rng, w, h, min(w, h) / 2.5, octaves=4)
-        edge = np.clip(_edge_distance(w, h) / 0.22, 0, 1)
-        # 가장자리로 갈수록 누렇게 타들어 간 느낌. 경계가 들쭉날쭉하도록 노이즈를 섞는다.
-        burn = np.clip(1.0 - edge + 0.5 * (blotch - 0.5), 0, 1) ** 2
-        shade = 1.0 - 0.05 * fine - 0.16 * np.clip(blotch - 0.35, 0, 1) - 0.06 * fiber - 0.30 * burn
+        edge = np.clip(_edge_distance(w, h) / 0.16, 0, 1)
+        # 가장자리로 갈수록 누렇게 바랜 느낌. 경계가 들쭉날쭉하도록 노이즈를 크게 섞는다.
+        ragged = fractal_noise(rng, w, h, min(w, h) / 6.0, octaves=3)
+        burn = np.clip(1.0 - edge + 1.1 * (ragged - 0.5), 0, 1) ** 1.6
+        mottle = value_noise(rng, w, h, scale * 0.5)
+        shade = (
+            1.0 - 0.05 * fine - 0.16 * np.clip(blotch - 0.35, 0, 1) - 0.04 * mottle - 0.015 * fiber - 0.24 * burn
+        )
         grain = 0.5 * fine + 0.5 * fiber
     else:  # pragma: no cover - PAPERS 와 어긋났을 때만
         raise SonError(f"종이를 만들 수 없습니다: {key}")

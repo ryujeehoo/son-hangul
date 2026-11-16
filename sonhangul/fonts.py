@@ -149,12 +149,12 @@ class GlyphOutline:
 class HandFont:
     """폰트 하나. 글리프 윤곽선을 em 단위로 정규화해 돌려준다.
 
-    폰트마다 글자 크기 느낌이 달라서, '가' 의 높이가 0.72em 이 되도록 맞춘다.
-    그래서 같은 --size 면 어느 폰트든 비슷한 크기로 보인다.
+    폰트마다 글자 크기 느낌이 달라서, 자주 쓰는 글자들의 평균 높이가 0.80em 이 되도록
+    맞춘다. 그래서 같은 --size 면 어느 폰트든 비슷한 크기로 보인다.
     """
 
-    REFERENCE_CHAR = "가"
-    REFERENCE_HEIGHT = 0.72
+    REFERENCE_CHARS = "가나다라마바사아자차카타파하를많님끝줄늘한글손씨편지입니다고맙습니요을은는이에서"
+    REFERENCE_HEIGHT = 0.80
 
     def __init__(self, key: str):
         self.key = key
@@ -166,12 +166,21 @@ class HandFont:
         self.upm = self._font["head"].unitsPerEm
         self._cache: dict[str, GlyphOutline] = {}
         self.norm = 1.0
-        ref = self._raw(self.REFERENCE_CHAR)
-        if ref is not None and ref.contours:
-            ys = np.concatenate([c[:, 1] for c in ref.contours])
-            height = float(ys.max() - ys.min())
-            if height > 0:
-                self.norm = self.REFERENCE_HEIGHT / height
+        heights = []
+        for ch in self.REFERENCE_CHARS:
+            ref = self._raw(ch)
+            if ref is not None and ref.contours:
+                ys = np.concatenate([c[:, 1] for c in ref.contours])
+                heights.append(float(ys.max() - ys.min()))
+        if heights and sum(heights) > 0:
+            self.norm = self.REFERENCE_HEIGHT / (sum(heights) / len(heights))
+        # 받침 있는 글자가 기준선 아래로 내려가는 깊이(em, 음수). 줄 노트에서 글자 밑을 줄에 맞출 때 쓴다.
+        lows = []
+        for ch in "를많님끝줄":
+            g = self.outline(ch)
+            if g is not None and g.contours:
+                lows.append(min(float(c[:, 1].min()) for c in g.contours))
+        self.descent = sum(lows) / len(lows) if lows else -0.1
 
     def has(self, ch: str) -> bool:
         return ord(ch) in self._cmap

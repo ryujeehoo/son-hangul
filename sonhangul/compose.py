@@ -14,6 +14,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from .config import Settings
@@ -159,7 +160,7 @@ class LLMClient:
     settings: Settings
     max_retries: int = 4
     timeout: float = 120.0
-    sleep: object = time.sleep  # 테스트에서 바꿔 끼운다
+    sleep: Callable[[float], None] = time.sleep  # 테스트에서 바꿔 끼운다
 
     def chat(self, system: str, user: str, *, temperature: float = 0.8, max_tokens: int = 700) -> str:
         if not self.settings.nvidia_api_key:

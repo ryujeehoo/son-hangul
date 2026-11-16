@@ -32,7 +32,7 @@ class Paragraph:
 @dataclass
 class HandStyle:
     font: str = DEFAULT_FONT
-    size: float = 56.0  # px. '가' 높이가 대략 size * 0.72
+    size: float = 56.0  # px. 글자 높이가 평균 size * 0.8 쯤 된다
     line_height: float = 1.6  # size 의 배수
     tracking: float = 0.0  # 글자 사이 추가 간격(size 의 배수)
     messiness: float = 1.0  # 0 = 폰트 그대로, 1 = 기본, 2 = 많이 흐트러짐
@@ -181,7 +181,8 @@ def layout_text(
             if line_index >= len(baselines):
                 overflow = True
                 break
-            base_y = baselines[line_index] - size * 0.08 + rng.normal(0, 0.03 * size) * m
+            # 한글은 받침이 기준선 아래로 내려가므로, 글자 밑이 줄 바로 위에 오도록 올려 쓴다.
+            base_y = baselines[line_index] + (chain.primary.descent - 0.05) * size + rng.normal(0, 0.03 * size) * m
             line_index += 1
         else:
             y += space_before * line_h

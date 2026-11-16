@@ -129,6 +129,7 @@ def render_page(
         size *= 0.93
         shrunk = True
 
+    layout.overflow = bool(overflow)
     height = layout.height
     if info.ruled:
         # 종이의 줄은 글이 없는 곳에도 끝까지 그어져 있다.

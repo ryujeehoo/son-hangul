@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _data_root() -> Path:
+    """폰트와 캐시를 둘 곳. 소스 폴더에서 쓰면 그 안에, pip 로 설치해 쓰면 홈 폴더 아래에."""
+    if (PROJECT_ROOT / "pyproject.toml").is_file():
+        return PROJECT_ROOT
+    return Path.home() / ".cache" / "son-hangul"
 
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
@@ -39,7 +46,7 @@ class Settings:
     nvidia_api_key: str | None = None
     llm_model: str = DEFAULT_LLM_MODEL
     base_url: str = NVIDIA_BASE_URL
-    cache_dir: Path = PROJECT_ROOT / ".cache" / "compose"
+    cache_dir: Path = field(default_factory=lambda: _data_root() / ".cache" / "compose")
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -47,9 +54,9 @@ class Settings:
             nvidia_api_key=os.getenv("NVIDIA_API_KEY") or None,
             llm_model=os.getenv("SON_LLM_MODEL", DEFAULT_LLM_MODEL),
             base_url=os.getenv("SON_LLM_BASE_URL", NVIDIA_BASE_URL),
-            cache_dir=Path(os.getenv("SON_CACHE_DIR", PROJECT_ROOT / ".cache" / "compose")),
+            cache_dir=Path(os.getenv("SON_CACHE_DIR") or _data_root() / ".cache" / "compose"),
         )
 
 
 def font_dir() -> Path:
-    return Path(os.getenv("SON_FONT_DIR", PROJECT_ROOT / "fonts" / "_downloads"))
+    return Path(os.getenv("SON_FONT_DIR") or _data_root() / "fonts" / "_downloads")
