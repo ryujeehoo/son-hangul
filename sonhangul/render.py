@@ -37,6 +37,7 @@ class HandStyle:
     tracking: float = 0.0  # 글자 사이 추가 간격(size 의 배수)
     messiness: float = 1.0  # 0 = 폰트 그대로, 1 = 기본, 2 = 많이 흐트러짐
     seed: int | None = None
+    slant: float | None = None  # 글 전체 기울임. None 이면 시드로 정한다(같은 사람이 쓴 여러 장은 같은 값으로).
 
 
 @dataclass
@@ -52,6 +53,14 @@ class Layout:
     height: int
     baselines: list[float] = field(default_factory=list)
     missing: set[str] = field(default_factory=set)
+    overflow: bool = False  # 줄 노트에서 줄이 모자라 글이 잘렸는지
+    next_line: int = 0  # 줄 노트에서 다음에 쓸 줄 번호
+    content_height: float = 0.0  # 여백을 포함해 글이 차지한 높이
+
+    def translate(self, dx: float, dy: float) -> None:
+        for g in self.glyphs:
+            g.contours = [c + (dx, dy) for c in g.contours]
+        self.baselines = [b + dy for b in self.baselines]
 
 
 @dataclass
@@ -126,9 +135,10 @@ def layout_text(
     height: int | None = None,
     margin: tuple[float, float, float, float] = (40, 40, 40, 40),  # top, right, bottom, left
     baselines: list[float] | None = None,
+    first_line: int = 0,
     rng: np.random.Generator | None = None,
 ) -> Layout:
-    """문단을 손글씨처럼 배치한다. baselines 를 주면(줄 노트) 그 줄 위에 쓴다."""
+    """문단을 손글씨처럼 배치한다. baselines 를 주면(줄 노트) first_line 번째 줄부터 그 위에 쓴다."""
     rng = rng or np.random.default_rng(style.seed)
     chain = FontChain(style.font)
     size, m = style.size, style.messiness
@@ -151,6 +161,8 @@ def layout_text(
 
     # 글 전체에 일정한 기울임. 오른쪽으로 살짝 눕는 사람이 많다.
     slant = rng.uniform(-0.03, 0.10) * m
+    if style.slant is not None:
+        slant = style.slant
 
     # 줄 목록 만들기
     rows: list[tuple[str, str, float]] = []  # (text, align, space_before)
@@ -161,11 +173,13 @@ def layout_text(
     placed: list[PlacedGlyph] = []
     used_baselines: list[float] = []
     y = top + size * 0.95
-    line_index = 0
+    line_index = first_line
+    overflow = False
     for text, align, space_before in rows:
         if baselines is not None:
             line_index += int(round(space_before))
             if line_index >= len(baselines):
+                overflow = True
                 break
             base_y = baselines[line_index] - size * 0.08 + rng.normal(0, 0.03 * size) * m
             line_index += 1
@@ -179,6 +193,10 @@ def layout_text(
         line_scale = 1 + rng.normal(0, 0.03) * m
         growth = rng.uniform(0.0, 0.05) * m  # 줄 끝으로 갈수록 커지는 정도
         indent = abs(rng.normal(0, 0.12 * size)) * m if align == "left" else 0.0
+        # 줄을 따라 기준선이 천천히 오르내린다(글자마다 따로 튀는 것과는 별개).
+        drift_amp = rng.normal(0, 0.03 * size) * m
+        drift_len = rng.uniform(5.0, 11.0) * size
+        drift_phase = rng.uniform(0, 2 * math.pi)
 
         line_glyphs: list[PlacedGlyph] = []
         x = 0.0
@@ -205,7 +223,12 @@ def layout_text(
             cy = (all_pts[:, 1].min() + all_pts[:, 1].max()) / 2
             cos_r, sin_r = math.cos(rot), math.sin(rot)
             transform = np.array([[cos_r, -sin_r], [sin_r, cos_r]]) @ np.array([[1, shear], [0, 1]]) * scale
-            base_at_x = base_y + slope * x + bow * math.sin(math.pi * min(x / max_w, 1.0))
+            base_at_x = (
+                base_y
+                + slope * x
+                + bow * math.sin(math.pi * min(x / max_w, 1.0))
+                + drift_amp * math.sin(2 * math.pi * x / drift_len + drift_phase)
+            )
             for c in glyph.contours:
                 q = warp(c) - (cx, cy)
                 q = q @ transform.T + (cx, cy)
@@ -227,10 +250,16 @@ def layout_text(
         placed.extend(line_glyphs)
         used_baselines.append(base_y)
 
+    if baselines is None:
+        end = y
+    else:
+        end = (used_baselines[-1] if used_baselines else top) + line_h
+    content_height = max(end + bottom - line_h * 0.45, top + bottom + size)
     if height is None:
-        height = int(math.ceil((y if baselines is None else used_baselines[-1] + line_h) + bottom - line_h * 0.45))
-        height = max(height, int(top + bottom + size))
-    return Layout(placed, width, height, used_baselines, set(chain.missing))
+        height = int(math.ceil(content_height))
+    return Layout(
+        placed, width, height, used_baselines, set(chain.missing), overflow, line_index, content_height
+    )
 
 
 def _rasterize_glyph(contours: list[np.ndarray], ss: int, pad: int):
@@ -260,12 +289,15 @@ def render_ink(
     """배치된 글자를 펜 효과와 함께 잉크 레이어로 만든다."""
     alpha = np.zeros((layout.height, layout.width), dtype=np.float32)
     pad = int(math.ceil(abs(pen.weight) * size)) + 3
+    # 필압은 글자마다 따로 튀지 않고 앞 글자를 따라 천천히 변한다.
+    bias = 0.0
     for g in layout.glyphs:
         if not g.contours:
             continue
+        bias = 0.8 * bias + rng.normal(0, 0.6)
         mask, (x0, y0, x1, y1) = _rasterize_glyph(g.contours, ss, pad)
-        mask = shape_glyph(mask, pen, size * ss, rng)
-        small = Image.fromarray(mask, mode="F").resize((x1 - x0, y1 - y0), Image.Resampling.BOX)
+        mask = shape_glyph(mask, pen, size * ss, rng, bias)
+        small = Image.fromarray(mask).resize((x1 - x0, y1 - y0), Image.Resampling.BOX)
         small = np.clip(np.asarray(small, dtype=np.float32), 0, 1)
         # 캔버스 밖으로 나간 부분 잘라내기
         cx0, cy0 = max(x0, 0), max(y0, 0)

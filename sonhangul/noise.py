@@ -11,7 +11,7 @@ def value_noise(rng: np.random.Generator, width: int, height: int, cell: float) 
     gw = max(2, int(np.ceil(width / cell)) + 2)
     gh = max(2, int(np.ceil(height / cell)) + 2)
     grid = rng.random((gh, gw)).astype(np.float32)
-    img = Image.fromarray(grid, mode="F").resize(
+    img = Image.fromarray(grid).resize(
         (int(gw * cell), int(gh * cell)), Image.Resampling.BICUBIC
     )
     arr = np.asarray(img, dtype=np.float32)[:height, :width]
