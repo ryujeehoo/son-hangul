@@ -166,7 +166,9 @@ def render_cards(
     base_seed = style.seed if style.seed is not None else int(np.random.SeedSequence().entropy % (2**31))
     slant = style.slant
     if slant is None:
-        slant = float(np.random.default_rng(base_seed).uniform(-0.03, 0.10)) * style.messiness
+        slant = style.habits.slant
+    if slant is None:
+        slant = float(np.random.default_rng(base_seed).uniform(-0.02, 0.06)) * min(style.messiness, 1.5)
 
     outputs: list[Path] = []
     pages: list[Page] = []

@@ -10,6 +10,7 @@ from . import __version__
 from .config import Settings, load_env
 from .errors import SonError
 from .fonts import DEFAULT_FONT, FONTS, download_font, font_path
+from .habits import PRESETS, get_habits
 from .ink import DEFAULT_PEN, PENS, get_pen, parse_color
 from .page import PAGE_SIZES_MM, PageOptions, letter, mm_to_px, page_pixels, render_page
 from .paper import DEFAULT_PAPER, PAPERS
@@ -28,8 +29,20 @@ def _add_style_args(p: argparse.ArgumentParser) -> None:
     g.add_argument("--size", type=float, help="글씨 크기(px). 용지를 고르면 대신 --size-mm 을 쓰는 편이 쉽다")
     g.add_argument("--size-mm", type=float, help="글씨 크기(mm). 용지(--page)와 같이 쓴다 (기본 6.5mm, A4 는 5.5mm)")
     g.add_argument("--line-height", type=float, default=1.6, help="줄 간격(글씨 크기의 배수, 기본 1.6)")
-    g.add_argument("--messiness", type=float, default=1.0, help="흐트러짐 정도. 0 = 폰트 그대로, 1 = 기본, 2 = 많이")
+    g.add_argument("--messiness", type=float, default=1.0,
+                   help="쓸 때마다 달라지는 정도. 0 = 폰트 그대로, 1 = 또박또박(기본), 2 = 흘려 씀, 3 = 급하게 쓴 쪽지")
+    g.add_argument("--wobble", type=float, default=1.0, help="줄이 기울고 휘는 정도. 0 = 자 대고 쓴 듯 곧게, 1 = 기본, 3 = 삐뚤빼뚤")
     g.add_argument("--seed", type=int, help="같은 숫자면 같은 결과가 나온다")
+
+    g = p.add_argument_group("필체 버릇 (글 전체에 일관되게 나타나는 습관)")
+    g.add_argument("--habit", default="none",
+                   help="버릇 이름. 쉼표로 겹칠 수 있다: " + ", ".join(["random", *PRESETS]) + " (기본 none)")
+    g.add_argument("--cho", type=float, help="초성 크기 배율 (예: 1.2 = 자음을 크게)")
+    g.add_argument("--vowel", type=float, help="모음 크기 배율 (예: 0.8 = 모음을 작게)")
+    g.add_argument("--jong", type=float, help="받침 크기 배율")
+    g.add_argument("--ieung", type=float, help="ㅇ 크기 배율")
+    g.add_argument("--glyph-width", type=float, help="글자 폭 배율 (0.85 = 길쭉하게, 1.15 = 납작하게)")
+    g.add_argument("--slant", type=float, help="기울임 (0 = 꼿꼿하게, 0.2 = 오른쪽으로 눕혀서)")
 
     g = p.add_argument_group("종이와 크기")
     g.add_argument("--paper", choices=sorted(PAPERS), help=f"종이 (기본: 이미지는 {DEFAULT_PAPER}, PDF 는 blank)")
@@ -64,9 +77,13 @@ def _style_and_options(args, *, for_pdf: bool) -> tuple[HandStyle, object, PageO
     paper = args.paper or ("blank" if for_pdf else DEFAULT_PAPER)
     if for_pdf and paper == "transparent":
         paper = "blank"
+    habits = get_habits(
+        args.habit, args.seed, cho=args.cho, vowel=args.vowel, jong=args.jong, ieung=args.ieung,
+        width=args.glyph_width, slant=args.slant,
+    )
     style = HandStyle(
         font=args.font, size=float(size), line_height=args.line_height,
-        messiness=max(0.0, args.messiness), seed=args.seed,
+        messiness=max(0.0, args.messiness), wobble=max(0.0, args.wobble), habits=habits, seed=args.seed,
     )
     options = PageOptions(
         width=width, height=height, margin=margin, paper=paper,
@@ -211,6 +228,10 @@ def cmd_list(args) -> int:
     print("펜:")
     for key, pen in PENS.items():
         print(f"  {key:15s} {pen.name}")
+    print("버릇 (--habit, 쉼표로 겹칠 수 있음):")
+    print(f"  {'random':15s} 시드로 정한 어떤 한 사람")
+    for key, (name, _) in PRESETS.items():
+        print(f"  {key:15s} {name}")
     print("종이:")
     for key, paper in PAPERS.items():
         print(f"  {key:15s} {paper.name}")

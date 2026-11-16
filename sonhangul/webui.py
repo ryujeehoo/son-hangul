@@ -10,6 +10,7 @@ from .config import Settings, load_env
 from .errors import SonError
 from .export import save_pdf, save_png
 from .fonts import DEFAULT_FONT, FONTS
+from .habits import PRESETS, get_habits
 from .ink import DEFAULT_PEN, PENS, get_pen
 from .page import PAGE_SIZES_MM, PageOptions, letter, mm_to_px, page_pixels, render_page
 from .paper import DEFAULT_PAPER, PAPERS
@@ -18,7 +19,8 @@ from .render import HandStyle
 FREE_SIZE = "자유(글 길이에 맞춤)"
 
 
-def make_page(text, to, sender, font, pen, paper, page_name, size_mm, messiness, seed, dpi=200):
+def make_page(text, to, sender, font, pen, paper, page_name, size_mm, messiness, seed,
+              habit=None, wobble=1.0, dpi=200):
     """화면에서 고른 값으로 한 장을 그린다. UI 없이도 부를 수 있게 따로 둔다."""
     text = (text or "").strip()
     if not text:
@@ -29,7 +31,10 @@ def make_page(text, to, sender, font, pen, paper, page_name, size_mm, messiness,
         valign = "top" if page_name in ("a4", "a5") else "center"
     else:
         width, height, valign = mm_to_px(150, dpi), None, "top"
-    style = HandStyle(font=font, size=size, messiness=float(messiness), seed=int(seed))
+    habits = get_habits(",".join(habit) if habit else "none", int(seed))
+    style = HandStyle(
+        font=font, size=size, messiness=float(messiness), wobble=float(wobble), habits=habits, seed=int(seed)
+    )
     options = PageOptions(width=width, height=height, paper=paper, valign=valign, dpi=dpi)
     content = letter(text, to=(to or "").strip() or None, sender=(sender or "").strip() or None)
     return render_page(content, style, get_pen(pen), options)
@@ -96,7 +101,12 @@ def build():
                 paper = gr.Dropdown([(p.name, k) for k, p in PAPERS.items()], value=DEFAULT_PAPER, label="종이")
                 page_name = gr.Dropdown([FREE_SIZE, *PAGE_SIZES_MM], value="a6", label="용지")
                 size_mm = gr.Slider(3, 12, value=6.5, step=0.5, label="글씨 크기(mm)")
-                messiness = gr.Slider(0, 2, value=1.0, step=0.1, label="흐트러짐(0 = 폰트 그대로)")
+                habit = gr.Dropdown(
+                    [("어떤 한 사람(시드로 정함)", "random"), *[(name, key) for key, (name, _) in PRESETS.items() if key != "none"]],
+                    value=[], multiselect=True, label="필체 버릇(여러 개 겹칠 수 있음)",
+                )
+                messiness = gr.Slider(0, 3, value=1.0, step=0.1, label="흐트러짐(0 = 폰트 그대로, 1 = 또박또박, 3 = 급하게)")
+                wobble = gr.Slider(0, 3, value=1.0, step=0.1, label="줄 흔들림(0 = 곧게)")
                 seed = gr.Number(value=1, precision=0, label="시드(바꾸면 다시 쓴 것처럼 달라짐)")
                 render_btn = gr.Button("손글씨로 쓰기", variant="primary")
             with gr.Column(scale=2):
@@ -104,7 +114,7 @@ def build():
                 files = gr.Files(label="내려받기(PNG, PDF)")
                 note = gr.Markdown()
 
-        inputs = [text, to, sender, font, pen, paper, page_name, size_mm, messiness, seed]
+        inputs = [text, to, sender, font, pen, paper, page_name, size_mm, messiness, seed, habit, wobble]
         render_btn.click(on_render, inputs, [image, files, note])
         suggest_btn.click(on_suggest, [name, relation, traits, request, tone, length, sender], [picks, text])
         picks.change(lambda v: v or gr.skip(), picks, text)

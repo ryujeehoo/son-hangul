@@ -1,13 +1,13 @@
 """손글씨 배치와 래스터화.
 
-폰트 글리프를 그대로 찍으면 같은 글자가 매번 똑같아서 바로 티가 난다. 그래서
-글자를 놓을 때마다 다음을 무작위로 바꾼다.
+폰트 글리프를 그대로 찍으면 같은 글자가 매번 똑같아서 바로 티가 난다. 그렇다고 글자마다
+크기·기울기·높이를 따로따로 흔들면 손이 떨리는 악필처럼 보인다. 사람 글씨는 줄과 크기는
+대체로 고르고, 개성은 일관된 버릇(자모 비율)에서 나온다. 그래서 세 가지를 나눠 다룬다.
 
-- 글자 단위: 크기, 회전, 기울임, 기준선 위아래, 자간
-- 획 단위: 윤곽선 전체를 부드러운 변위장(sin 합)으로 비튼다. 변위가 위치의
-  함수라 획의 양쪽 윤곽이 같이 움직이므로 획 굵기는 유지되고 모양만 달라진다.
-- 줄 단위: 기울기, 휘어짐, 왼쪽 여백, 줄마다 다른 크기, 뒤로 갈수록 조금 커짐
-- 글 전체: 사람마다 다른 일정한 기울임(slant)
+- 버릇(habits): 초성·모음·받침·ㅇ 크기, 글자 폭, 기울임. 글 전체에 똑같이 적용한다.
+- 흐트러짐(messiness): 쓸 때마다 달라지는 정도. 자모 크기와 윤곽선이 조금씩 달라지고,
+  글자 높낮이는 글자마다 튀지 않고 앞 글자를 따라 천천히 오르내린다.
+- 줄 흔들림(wobble): 줄이 기울거나 휘는 정도. 0 이면 자를 대고 쓴 것처럼 곧다.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from .fonts import DEFAULT_FONT, FontChain
+from .habits import Habits, apply_habits, segments_for
 from .ink import Pen, apply_tone, shape_glyph
 
 
@@ -35,7 +36,9 @@ class HandStyle:
     size: float = 56.0  # px. 글자 높이가 평균 size * 0.8 쯤 된다
     line_height: float = 1.6  # size 의 배수
     tracking: float = 0.0  # 글자 사이 추가 간격(size 의 배수)
-    messiness: float = 1.0  # 0 = 폰트 그대로, 1 = 기본, 2 = 많이 흐트러짐
+    messiness: float = 1.0  # 0 = 폰트 그대로, 1 = 또박또박 쓴 사람, 2 = 흘려 쓴 사람, 3 = 급하게 쓴 쪽지
+    wobble: float = 1.0  # 줄이 기울고 휘는 정도. 0 = 곧게
+    habits: Habits = field(default_factory=Habits)  # 필체 버릇
     seed: int | None = None
     slant: float | None = None  # 글 전체 기울임. None 이면 시드로 정한다(같은 사람이 쓴 여러 장은 같은 값으로).
 
@@ -113,8 +116,8 @@ class _Warp:
 
         m = messiness
         # 큰 흔들림(글자 모양이 달라짐) + 잔떨림(손 떨림)
-        self.dx = terms(3, 0.020 * m, 0.5, 1.6) + terms(2, 0.0035 * m, 4.0, 8.0)
-        self.dy = terms(3, 0.020 * m, 0.5, 1.6) + terms(2, 0.0035 * m, 4.0, 8.0)
+        self.dx = terms(3, 0.011 * m, 0.5, 1.6) + terms(2, 0.0018 * m, 4.0, 8.0)
+        self.dy = terms(3, 0.011 * m, 0.5, 1.6) + terms(2, 0.0018 * m, 4.0, 8.0)
 
     @staticmethod
     def _field(terms, p):
@@ -141,7 +144,7 @@ def layout_text(
     """문단을 손글씨처럼 배치한다. baselines 를 주면(줄 노트) first_line 번째 줄부터 그 위에 쓴다."""
     rng = rng or np.random.default_rng(style.seed)
     chain = FontChain(style.font)
-    size, m = style.size, style.messiness
+    size, m, wob, habits = style.size, style.messiness, style.wobble, style.habits
     top, right, bottom, left = margin
     max_w = width - left - right
     line_h = style.line_height * size
@@ -155,12 +158,27 @@ def layout_text(
             if ch == " ":
                 total += space_adv * 1.08
                 continue
-            g = chain.lookup(ch)
-            total += (g.advance if g else 0.5) * size + style.tracking * size
+            total += habit_advance(ch) * size + style.tracking * size
         return total
 
+    # 버릇을 입힌 글자 폭(줄바꿈 계산용). 쓸 때마다 달라지는 몫은 뺀 값이다.
+    advance_cache: dict[str, float] = {}
+
+    def habit_advance(ch: str) -> float:
+        if ch not in advance_cache:
+            g = chain.lookup(ch)
+            if g is None:
+                advance_cache[ch] = 0.5
+            else:
+                advance_cache[ch] = apply_habits(
+                    ch, g.contours, g.advance, habits, segments_for(ch, g), rng, 0.0
+                )[1]
+        return advance_cache[ch]
+
     # 글 전체에 일정한 기울임. 오른쪽으로 살짝 눕는 사람이 많다.
-    slant = rng.uniform(-0.03, 0.10) * m
+    slant = rng.uniform(-0.02, 0.06) * min(m, 1.5)
+    if habits.slant is not None:
+        slant = habits.slant
     if style.slant is not None:
         slant = style.slant
 
@@ -182,22 +200,24 @@ def layout_text(
                 overflow = True
                 break
             # 한글은 받침이 기준선 아래로 내려가므로, 글자 밑이 줄 바로 위에 오도록 올려 쓴다.
-            base_y = baselines[line_index] + (chain.primary.descent - 0.05) * size + rng.normal(0, 0.03 * size) * m
+            base_y = baselines[line_index] + (chain.primary.descent - 0.05) * size + rng.normal(0, 0.012 * size) * wob
             line_index += 1
         else:
             y += space_before * line_h
-            base_y = y + rng.normal(0, 0.05 * size) * m
-            y += line_h * (1 + rng.normal(0, 0.02) * m)
+            base_y = y + rng.normal(0, 0.02 * size) * wob
+            y += line_h * (1 + rng.normal(0, 0.008) * wob)
 
-        slope = rng.normal(0, 0.010) * m  # dy/dx (아래가 +)
-        bow = rng.normal(0, 0.05 * size) * m
-        line_scale = 1 + rng.normal(0, 0.03) * m
-        growth = rng.uniform(0.0, 0.05) * m  # 줄 끝으로 갈수록 커지는 정도
-        indent = abs(rng.normal(0, 0.12 * size)) * m if align == "left" else 0.0
+        slope = rng.normal(0, 0.0035) * wob  # dy/dx (아래가 +)
+        bow = rng.normal(0, 0.015 * size) * wob
+        line_scale = 1 + rng.normal(0, 0.012) * m
+        growth = rng.uniform(0.0, 0.02) * m  # 줄 끝으로 갈수록 커지는 정도
+        indent = abs(rng.normal(0, 0.05 * size)) * wob if align == "left" else 0.0
         # 줄을 따라 기준선이 천천히 오르내린다(글자마다 따로 튀는 것과는 별개).
-        drift_amp = rng.normal(0, 0.03 * size) * m
-        drift_len = rng.uniform(5.0, 11.0) * size
+        drift_amp = rng.normal(0, 0.012 * size) * wob
+        drift_len = rng.uniform(6.0, 12.0) * size
         drift_phase = rng.uniform(0, 2 * math.pi)
+        # 높이와 크기의 큰 몫은 앞 글자를 따라 천천히 변한다. 글자마다 따로 튀면 떨리는 글씨가 된다.
+        ar_dy = ar_scale = 0.0
 
         line_glyphs: list[PlacedGlyph] = []
         x = 0.0
@@ -206,20 +226,25 @@ def layout_text(
             t = min(x / total, 1.0)
             s = size * line_scale * (1 + growth * t)
             if ch == " ":
-                x += space_adv * rng.uniform(0.85, 1.35) ** max(m, 0.01)
+                x += space_adv * rng.uniform(0.92, 1.16) ** max(m, 0.01)
                 continue
             glyph = chain.lookup(ch)
             if glyph is None:
                 x += 0.5 * s
                 continue
-            scale = 1 + rng.normal(0, 0.045) * m
-            rot = rng.normal(0, 0.035) * m - math.atan(slope)
-            shear = slant + rng.normal(0, 0.04) * m
-            dy = rng.normal(0, 0.035 * s) * m
+            ar_dy = 0.75 * ar_dy + rng.normal(0, 0.66)
+            ar_scale = 0.75 * ar_scale + rng.normal(0, 0.66)
+            scale = 1 + (0.014 * ar_scale + rng.normal(0, 0.008)) * m
+            rot = rng.normal(0, 0.010) * m - math.atan(slope)
+            shear = slant + rng.normal(0, 0.012) * m
+            dy = (0.012 * ar_dy + rng.normal(0, 0.006)) * s * m
             warp = _Warp(rng, m)
+            shaped, advance = apply_habits(
+                ch, glyph.contours, glyph.advance, habits, segments_for(ch, glyph), rng, 0.025 * m
+            )
 
             contours = []
-            all_pts = np.concatenate(glyph.contours) if glyph.contours else np.zeros((1, 2))
+            all_pts = np.concatenate(shaped) if shaped else np.zeros((1, 2))
             cx = (all_pts[:, 0].min() + all_pts[:, 0].max()) / 2
             cy = (all_pts[:, 1].min() + all_pts[:, 1].max()) / 2
             cos_r, sin_r = math.cos(rot), math.sin(rot)
@@ -230,20 +255,20 @@ def layout_text(
                 + bow * math.sin(math.pi * min(x / max_w, 1.0))
                 + drift_amp * math.sin(2 * math.pi * x / drift_len + drift_phase)
             )
-            for c in glyph.contours:
+            for c in shaped:
                 q = warp(c) - (cx, cy)
                 q = q @ transform.T + (cx, cy)
                 px = x + q[:, 0] * s
                 py = base_at_x + dy - q[:, 1] * s
                 contours.append(np.stack([px, py], axis=1))
             line_glyphs.append(PlacedGlyph(ch, contours))
-            jitter = rng.uniform(0.92, 1.06) ** max(m, 0.01)
-            x += glyph.advance * s * scale * jitter + style.tracking * size
+            jitter = rng.uniform(0.97, 1.03) ** max(m, 0.01)
+            x += advance * s * scale * jitter + style.tracking * size
 
         if align == "right":
-            offset = left + max_w - x - abs(rng.normal(0, 0.1 * size)) * m
+            offset = left + max_w - x - abs(rng.normal(0, 0.04 * size)) * wob
         elif align == "center":
-            offset = left + (max_w - x) / 2 + rng.normal(0, 0.1 * size) * m
+            offset = left + (max_w - x) / 2 + rng.normal(0, 0.04 * size) * wob
         else:
             offset = left + indent
         for g in line_glyphs:

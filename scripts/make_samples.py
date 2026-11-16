@@ -11,6 +11,7 @@ from PIL import Image, ImageDraw
 
 from sonhangul.export import normal_map, save_pdf
 from sonhangul.fonts import FONTS
+from sonhangul.habits import get_habits
 from sonhangul.ink import PENS, get_pen
 from sonhangul.page import PageOptions, letter, page_pixels, render_page
 from sonhangul.render import HandStyle
@@ -62,14 +63,34 @@ def main() -> None:
                             PageOptions(width=w, height=h, paper="blank", valign="center"))
     print(save_pdf([printable], OUT / "card_print.pdf"))
 
-    # 2. 같은 글자가 매번 다르게: 흐트러짐 0 / 1 / 1.8
+    # 2. 흐트러짐: 0 은 폰트 그대로(모든 글자가 똑같음), 1 이 기본
     rows = []
-    for m in (0.0, 1.0, 1.8):
+    for m in (0.0, 1.0, 2.0, 3.0):
         page = render_page(f"가가가가가 를를를를를 요요요요요  (흐트러짐 {m:g})", HandStyle(size=50, seed=4, messiness=m),
-                           get_pen("gel"), PageOptions(width=1100, paper="blank"))
+                           get_pen("gel"), PageOptions(width=1100, paper="blank", margin=(26, 30, 14, 30)))
         rows.append(page.image)
     stack(rows).save(OUT / "messiness.png", optimize=True)
     print(OUT / "messiness.png")
+
+    # 2-1. 필체 버릇: 같은 폰트, 같은 문장인데 사람이 달라 보인다
+    rows = []
+    for habit in ("none", "big-cho", "small-vowel", "small-ieung", "big-ieung,small-jong", "narrow,slanted", "random"):
+        page = render_page(f"안녕하세요, 올해도 정말 고마웠어요. ({habit})",
+                           HandStyle(font="hi-melody", size=42, seed=3, habits=get_habits(habit, seed=11)),
+                           get_pen("gel"), PageOptions(width=1100, paper="blank", margin=(22, 30, 12, 30)))
+        rows.append(page.image)
+    stack(rows).save(OUT / "habits.png", optimize=True)
+    print(OUT / "habits.png")
+
+    # 2-2. 줄 흔들림
+    rows = []
+    for w in (0.0, 1.0, 3.0):
+        page = render_page(f"줄을 맞춰 쓰는 사람도 있고 조금씩 올라가는 사람도 있어요. (줄 흔들림 {w:g})",
+                           HandStyle(size=42, seed=6, wobble=w), get_pen("gel"),
+                           PageOptions(width=1100, paper="blank", margin=(22, 30, 12, 30)))
+        rows.append(page.image)
+    stack(rows).save(OUT / "wobble.png", optimize=True)
+    print(OUT / "wobble.png")
 
     # 3. 폰트
     rows = []
@@ -100,7 +121,7 @@ def main() -> None:
 
     # 6. 게임 텍스처: 낡은 쪽지 / 투명 잉크를 다른 배경에 / 노멀맵
     note = "열쇠는 화분 밑에 뒀어.\n지하실 문은 절대 열지 마.\n- K"
-    style = HandStyle(font="poor-story", size=40, seed=31, messiness=1.4)
+    style = HandStyle(font="poor-story", size=40, seed=31, messiness=2.5, wobble=2.5)
     opts = dict(width=512, height=512, valign="center")
     aged = render_page(note, style, get_pen("fountain"), PageOptions(paper="aged", **opts))
     clear = render_page(note, style, get_pen("pencil", (235, 235, 225)), PageOptions(paper="transparent", **opts))
